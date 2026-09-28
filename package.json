@@ -1,0 +1,16 @@
+{
+  "name": "gb-qr-aviso",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Avisos generales desde enlaces QR publicados por MQTT.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "mqtt": "5.16.0"
+  }
+}
