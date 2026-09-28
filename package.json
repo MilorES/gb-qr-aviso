@@ -5,10 +5,10 @@
   "description": "Avisos generales desde enlaces QR publicados por MQTT.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.6"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node --env-file=.env server.js"
   },
   "dependencies": {
     "mqtt": "5.16.0"
