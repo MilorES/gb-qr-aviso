@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
@@ -9,6 +10,9 @@ const PUBLIC_DIR = join(ROOT, "public");
 const PORT = Number(process.env.PORT || 3000);
 const MQTT_URL = process.env.MQTT_URL;
 const MQTT_TOPIC = process.env.MQTT_TOPIC || "gb/avisos/qr";
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 30;
+const requestsByIp = new Map();
 
 let mqttConnected = false;
 let mqttClient;
@@ -43,18 +47,42 @@ function json(response, status, data) {
   response.end(JSON.stringify(data));
 }
 
+function isRateLimited(ip) {
+  const now = Date.now();
+  const recent = (requestsByIp.get(ip) || []).filter((time) => now - time < RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX) {
+    requestsByIp.set(ip, recent);
+    return true;
+  }
+  recent.push(now);
+  requestsByIp.set(ip, recent);
+
+  if (requestsByIp.size > 1000) {
+    for (const [key, times] of requestsByIp) {
+      if (times.every((time) => now - time >= RATE_LIMIT_WINDOW_MS)) requestsByIp.delete(key);
+    }
+  }
+  return false;
+}
+
 function readJson(request, maxBytes = 2048) {
   return new Promise((resolveBody, reject) => {
     let body = "";
+    let tooLarge = false;
     request.setEncoding("utf8");
     request.on("data", (chunk) => {
+      if (tooLarge) return;
       body += chunk;
       if (Buffer.byteLength(body) > maxBytes) {
-        reject(new Error("Request body too large"));
-        request.destroy();
+        tooLarge = true;
+        body = "";
       }
     });
     request.on("end", () => {
+      if (tooLarge) {
+        reject(new Error("Request body too large"));
+        return;
+      }
       try {
         resolveBody(JSON.parse(body));
       } catch {
@@ -76,7 +104,7 @@ function publishAlert(event) {
   });
 }
 
-async function serveStatic(request, response, pathname) {
+async function serveStatic(response, pathname) {
   let requestedPath;
   try {
     requestedPath = decodeURIComponent(pathname);
@@ -93,12 +121,11 @@ async function serveStatic(request, response, pathname) {
     return;
   }
 
-  let filePath = candidate;
   try {
-    const data = await readFile(filePath);
-    const type = extname(filePath) === ".css"
+    const data = await readFile(candidate);
+    const type = extname(candidate) === ".css"
       ? "text/css; charset=utf-8"
-      : extname(filePath) === ".js"
+      : extname(candidate) === ".js"
         ? "text/javascript; charset=utf-8"
         : "text/html; charset=utf-8";
     response.writeHead(200, {
@@ -142,17 +169,19 @@ const server = createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/api/alert") {
+    const ip = request.socket.remoteAddress || "unknown";
+    if (isRateLimited(ip)) {
+      return json(response, 429, { ok: false, error: "Too many requests" });
+    }
+
     let payload;
     try {
       payload = await readJson(request);
     } catch (error) {
-      if (!response.headersSent) {
-        return json(response, error.message === "Request body too large" ? 413 : 400, {
-          ok: false,
-          error: error.message,
-        });
-      }
-      return;
+      return json(response, error.message === "Request body too large" ? 413 : 400, {
+        ok: false,
+        error: error.message,
+      });
     }
 
     const bar = typeof payload.bar === "string" ? payload.bar.toLowerCase() : "";
@@ -169,7 +198,7 @@ const server = createServer(async (request, response) => {
       bar,
       mesa: Number(mesa),
       timestamp: new Date().toISOString(),
-      id: crypto.randomUUID(),
+      id: randomUUID(),
     };
 
     try {
@@ -190,7 +219,7 @@ const server = createServer(async (request, response) => {
     response.end("Method not allowed");
     return;
   }
-  return serveStatic(request, response, url.pathname);
+  return serveStatic(response, url.pathname);
 });
 
 server.listen(PORT, () => {
