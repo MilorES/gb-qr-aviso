@@ -28,7 +28,7 @@ Para el ejemplo se publica:
 - Tema: `/breston/mesa/01`
 - Payload: `Cobrar en VISA`
 
-El payload predeterminado para `/breston/mesa/01` sería `Predeterminado`. La web muestra el aviso completo como `MESA 01 Cobrar en VISA`.\n\nLos segmentos `local` y `nombre` se conservan tal como aparecen en la URL. MQTT distingue mayúsculas y minúsculas en los temas: `/Breston/Mesa/01` y `/breston/mesa/01` son temas diferentes.
+El payload predeterminado para `/breston/mesa/01` sería `Predeterminado`. La web muestra el aviso completo como `Mesa 01 Cobrar en VISA`, conservando las mayúsculas y minúsculas del segmento `nombre`.\n\nLos segmentos `local` y `nombre` se conservan tal como aparecen en la URL. MQTT distingue mayúsculas y minúsculas en los temas: `/Breston/Mesa/01` y `/breston/mesa/01` son temas diferentes.
 
 El navegador interpreta los tres segmentos obligatorios y el cuarto opcional, y los envía al servidor. El servidor valida los datos y publica el texto plano en el tema indicado. Las credenciales MQTT se guardan en el archivo `.env`, que se monta como solo lectura dentro del contenedor y queda excluido de Git.
 
