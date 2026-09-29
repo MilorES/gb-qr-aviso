@@ -220,7 +220,7 @@ const server = createServer(async (request, response) => {
     }
 
     const messageType = normalizeWords(tipoDeAviso);
-    const message = `${normalizeWords(nombre)} ${identificador} ${messageType}`;
+    const message = messageType;
     const topic = `/${local}/${nombre}/${identificador}`;
 
     try {
