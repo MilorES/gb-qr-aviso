@@ -196,7 +196,7 @@ function validType(value) {
   return typeof value === "string"
     && value.length > 0
     && value.length <= 80
-    && /^[\p{L}\p{N}_ -]+$/u.test(value)
+    && /^[\p{L}\p{N}_ ()-]+$/u.test(value)
     && normalizeWords(value).length > 0;
 }
 
