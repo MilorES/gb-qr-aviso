@@ -9,7 +9,7 @@ const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(ROOT, "public");
 const PORT = Number(process.env.PORT || 3000);
 const MQTT_URL = process.env.MQTT_URL;
-const MQTT_TOPIC = process.env.MQTT_TOPIC || "gb/avisos/qr";
+const MQTT_TOPIC = (process.env.MQTT_TOPIC || "gb/avisos").replace(/\/+$/, "");
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 30;
 const requestsByIp = new Map();
@@ -93,10 +93,22 @@ function readJson(request, maxBytes = 2048) {
   });
 }
 
-function publishAlert(event) {
+function normalizeWords(value) {
+  return value.replaceAll("_", " ").trim().replace(/\s+/g, " ");
+}
+
+function validWords(value, maxLength) {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= maxLength
+    && /^[\p{L}\p{N}_ -]+$/u.test(value)
+    && normalizeWords(value).length > 0;
+}
+
+function publishAlert(topic, event) {
   return new Promise((resolvePublish, reject) => {
     mqttClient.publish(
-      MQTT_TOPIC,
+      topic,
       JSON.stringify(event),
       { qos: 1, retain: false },
       (error) => (error ? reject(error) : resolvePublish()),
@@ -184,26 +196,38 @@ const server = createServer(async (request, response) => {
       });
     }
 
-    const bar = typeof payload.bar === "string" ? payload.bar.toLowerCase() : "";
-    const mesa = typeof payload.mesa === "string" ? payload.mesa : "";
-    if (!/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/.test(bar) || !/^\d{1,4}$/.test(mesa) || Number(mesa) < 1) {
-      return json(response, 400, { ok: false, error: "Invalid bar or table" });
+    const local = typeof payload.local === "string" ? payload.local.toLowerCase() : "";
+    const nombre = payload.nombre;
+    const identificador = payload.identificador;
+    const tipoDeAviso = payload.tipo_de_aviso;
+
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/.test(local)
+      || !validWords(nombre, 40)
+      || typeof identificador !== "string"
+      || !/^[\p{L}\p{N}_-]{1,32}$/u.test(identificador)
+      || !validWords(tipoDeAviso, 80)) {
+      return json(response, 400, { ok: false, error: "Invalid QR data" });
     }
     if (!mqttClient || !mqttConnected) {
       return json(response, 503, { ok: false, error: "MQTT broker is not connected" });
     }
 
+    const mensaje = `${normalizeWords(nombre).toLocaleUpperCase("es-ES")} ${identificador} ${normalizeWords(tipoDeAviso)}`;
     const event = {
-      event: "qr_opened",
-      bar,
-      mesa: Number(mesa),
+      event: "qr_alert",
+      local,
+      nombre: normalizeWords(nombre),
+      identificador,
+      tipo_de_aviso: normalizeWords(tipoDeAviso),
+      mensaje,
       timestamp: new Date().toISOString(),
       id: randomUUID(),
     };
+    const topic = `${MQTT_TOPIC}/${local}`;
 
     try {
-      await publishAlert(event);
-      return json(response, 200, { ok: true });
+      await publishAlert(topic, event);
+      return json(response, 200, { ok: true, mensaje });
     } catch (error) {
       console.error("MQTT publish failed:", error.message);
       return json(response, 502, { ok: false, error: "Could not publish the alert" });
