@@ -87,7 +87,7 @@ async function sendAlert(qr) {
 
 async function preparePage(qr) {
   const place = `${qr.nombre} ${qr.identificador}`;
-  context.textContent = `${qr.local} · ${place}`;
+  context.textContent = `${normalizeWords(qr.local)} · ${place}`;
   document.title = `${place} | Aviso QR`;
   showStatus("sending", "Preparando el aviso…", "");
 
