@@ -30,7 +30,7 @@ Para el ejemplo se publica:
 
 El payload predeterminado para `/breston/mesa/01` sería `Predeterminado`. La web muestra el aviso completo como `MESA 01 Cobrar en VISA`.
 
-La web envía los cuatro valores al servidor. El servidor valida la ruta y publica el texto plano en el tema indicado. Las credenciales MQTT solo están en el archivo `.env`, que se monta como solo lectura dentro del contenedor y queda excluido de Git.
+El navegador interpreta los tres segmentos obligatorios y el cuarto opcional, y los envía al servidor. El servidor valida los datos y publica el texto plano en el tema indicado. Las credenciales MQTT se guardan en el archivo `.env`, que se monta como solo lectura dentro del contenedor y queda excluido de Git.
 
 ## Puesta en marcha con Docker
 
@@ -56,6 +56,8 @@ El proceso Node debe poder alcanzar el broker desde la red donde se ejecuta Dock
 
 El puerto 1883 con `mqtt://` no cifra la conexión. Si se usan credenciales por Internet, podrían viajar sin cifrar. Para producción, habilita TLS en el broker y configura una dirección `mqtts://` segura. Un broker público compartido sirve para pruebas, no para avisos reales.
 
-## Estado
+## Estado actual
 
-Primera versión en desarrollo. Falta verificar la conexión desde el servidor Docker al broker y desplegar el dominio con HTTPS.
+**Preparado en el repositorio:** lectura de rutas QR con tipo opcional, composición del texto del aviso, publicación MQTT en texto plano, configuración Docker Compose y exclusión de `.env` de Git.
+
+**Pendiente:** rellenar `.env` en el servidor, comprobar la conexión real al broker, arrancar y verificar el contenedor, y publicar el dominio mediante un proxy HTTPS.
