@@ -75,8 +75,10 @@ async function sendAlert(qr) {
     }
 
     showStatus("success", "Aviso enviado", "El equipo ha recibido el aviso.");
-    sendButton.disabled = false;
     sendButton.textContent = "Enviar otro aviso";
+    window.setTimeout(() => {
+      sendButton.disabled = false;
+    }, 2000);
   } catch {
     showStatus("error", "No se pudo enviar el aviso", "Comprueba tu conexión o avisa al personal directamente.");
     sendButton.disabled = false;
