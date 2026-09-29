@@ -11,7 +11,7 @@ El último segmento es opcional. Sin él, la web presenta la lista de avisos del
 
 Significado de los segmentos:
 
-- `local`: quién recibe el aviso, por ejemplo `breston`.
+- `local`: quién recibe el aviso, por ejemplo `Breston` o `Breston_Figueres`. Puede contener letras, números, guiones y guiones bajos.
 - `nombre`: origen del aviso, por ejemplo `mesa`, `barra` o `coche`.
 - `identificador`: distingue el origen, por ejemplo `01`, `B` o `ABC`.
 - `tipo_de_aviso`: aviso preseleccionado. Los guiones bajos se convierten en espacios. Si no aparece, se elige en la web.
