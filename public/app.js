@@ -29,7 +29,7 @@ function parseQrPath(pathname) {
   }
 
   const [local, nombre, identificador, rawType] = parts;
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/i.test(local)) return null;
+  if (!/^[a-z0-9](?:[a-z0-9_-]{0,48}[a-z0-9])?$/i.test(local)) return null;
   if (!/^[\p{L}\p{N}_-]{1,40}$/u.test(nombre)) return null;
   if (!/^[\p{L}\p{N}_-]{1,32}$/u.test(identificador)) return null;
 
