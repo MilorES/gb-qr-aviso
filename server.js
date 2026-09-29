@@ -43,7 +43,7 @@ const ALERT_TYPES = parseAlertTypes(process.env.ALERT_TYPES);
 if (ALERT_TYPES.length === 0) throw new Error("ALERT_TYPES must contain at least one valid alert type");
 
 function validLocalName(value) {
-  return /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/i.test(value);
+  return /^[a-z0-9](?:[a-z0-9_-]{0,48}[a-z0-9])?$/i.test(value);
 }
 
 function isKnownLocal(value) {
