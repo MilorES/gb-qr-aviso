@@ -9,31 +9,49 @@ function showStatus(state, message, helpMessage = "") {
   help.textContent = helpMessage;
 }
 
-function parseQrPath(pathname) {
-  const parts = pathname.split("/").filter(Boolean);
-  if (parts.length !== 3 || parts[1].toLowerCase() !== "mesa") return null;
+function normalizeWords(value) {
+  return value.replaceAll("_", " ").trim().replace(/\s+/g, " ");
+}
 
-  let bar;
+function validWords(value, maxLength) {
+  return value.length > 0
+    && value.length <= maxLength
+    && /^[\p{L}\p{N}_ -]+$/u.test(value)
+    && normalizeWords(value).length > 0;
+}
+
+function parseQrPath(pathname) {
+  const encodedParts = pathname.split("/").filter(Boolean);
+  if (encodedParts.length !== 4) return null;
+
+  let parts;
   try {
-    bar = decodeURIComponent(parts[0]).toLowerCase();
+    parts = encodedParts.map(decodeURIComponent);
   } catch {
     return null;
   }
-  const mesa = parts[2];
 
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/.test(bar)) return null;
-  if (!/^\d{1,4}$/.test(mesa) || Number(mesa) < 1) return null;
+  const [local, nombre, identificador, tipoDeAviso] = parts;
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/i.test(local)) return null;
+  if (!validWords(nombre, 40)) return null;
+  if (!/^[\p{L}\p{N}_-]{1,32}$/u.test(identificador)) return null;
+  if (!validWords(tipoDeAviso, 80)) return null;
 
-  return { bar, mesa };
+  return {
+    local: local.toLowerCase(),
+    nombre: normalizeWords(nombre),
+    identificador,
+    tipo_de_aviso: normalizeWords(tipoDeAviso),
+  };
 }
 
-async function sendAlert(bar, mesa) {
+async function sendAlert(qr) {
   showStatus("sending", "Enviando aviso…", "Un momento, por favor.");
   try {
     const response = await fetch("/api/alert", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ bar, mesa }),
+      body: JSON.stringify(qr),
       cache: "no-store",
     });
     const result = await response.json().catch(() => ({}));
@@ -43,11 +61,15 @@ async function sendAlert(bar, mesa) {
         showStatus("error", "Aviso no disponible", "El servicio está desconectado. Prueba de nuevo más tarde.");
         return;
       }
+      if (response.status === 429) {
+        showStatus("error", "Espera un momento", "Ya se han enviado varios avisos desde esta conexión.");
+        return;
+      }
       showStatus("error", "No se pudo enviar el aviso", "Puedes avisar al personal directamente.");
       return;
     }
 
-    showStatus("success", "Aviso enviado", "El equipo del establecimiento ha recibido el aviso.");
+    showStatus("success", "Aviso enviado", "El equipo ha recibido el aviso.");
   } catch {
     showStatus("error", "No se pudo enviar el aviso", "Comprueba tu conexión o avisa al personal directamente.");
   }
@@ -56,10 +78,10 @@ async function sendAlert(bar, mesa) {
 const qr = parseQrPath(window.location.pathname);
 if (!qr) {
   context.textContent = "El enlace del código QR no es válido.";
-  showStatus("error", "No se pudo identificar la mesa", "El enlace debe tener el formato /nombrebar/mesa/numero.");
+  showStatus("error", "No se pudo identificar el aviso", "El enlace debe tener el formato /local/nombre/identificador/tipo_de_aviso.");
 } else {
-  const barName = qr.bar.replaceAll("-", " ");
-  context.textContent = `${barName} · Mesa ${qr.mesa}`;
-  document.title = `${barName} · Mesa ${qr.mesa} | Aviso`;
-  void sendAlert(qr.bar, qr.mesa);
+  const mensaje = `${qr.nombre.toLocaleUpperCase("es-ES")} ${qr.identificador} ${qr.tipo_de_aviso}`;
+  context.textContent = `${qr.local} · ${mensaje}`;
+  document.title = `${mensaje} | Aviso QR`;
+  void sendAlert(qr);
 }
