@@ -13,16 +13,16 @@ function normalizeWords(value) {
   return value.replaceAll("_", " ").trim().replace(/\s+/g, " ");
 }
 
-function validWords(value, maxLength) {
+function validType(value) {
   return value.length > 0
-    && value.length <= maxLength
+    && value.length <= 80
     && /^[\p{L}\p{N}_ -]+$/u.test(value)
     && normalizeWords(value).length > 0;
 }
 
 function parseQrPath(pathname) {
   const encodedParts = pathname.split("/").filter(Boolean);
-  if (encodedParts.length !== 4) return null;
+  if (encodedParts.length !== 3 && encodedParts.length !== 4) return null;
 
   let parts;
   try {
@@ -31,17 +31,19 @@ function parseQrPath(pathname) {
     return null;
   }
 
-  const [local, nombre, identificador, tipoDeAviso] = parts;
+  const [local, nombre, identificador, rawType] = parts;
   if (!/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/i.test(local)) return null;
-  if (!validWords(nombre, 40)) return null;
+  if (!/^[\p{L}\p{N}_-]{1,40}$/u.test(nombre)) return null;
   if (!/^[\p{L}\p{N}_-]{1,32}$/u.test(identificador)) return null;
-  if (!validWords(tipoDeAviso, 80)) return null;
+
+  const tipo_de_aviso = rawType ? normalizeWords(rawType) : "Predeterminado";
+  if (!validType(tipo_de_aviso)) return null;
 
   return {
     local: local.toLowerCase(),
-    nombre: normalizeWords(nombre),
+    nombre,
     identificador,
-    tipo_de_aviso: normalizeWords(tipoDeAviso),
+    tipo_de_aviso,
   };
 }
 
@@ -78,10 +80,10 @@ async function sendAlert(qr) {
 const qr = parseQrPath(window.location.pathname);
 if (!qr) {
   context.textContent = "El enlace del código QR no es válido.";
-  showStatus("error", "No se pudo identificar el aviso", "El enlace debe tener el formato /local/nombre/identificador/tipo_de_aviso.");
+  showStatus("error", "No se pudo identificar el aviso", "Formato: /local/nombre/identificador/tipo_de_aviso (el último dato es opcional).");
 } else {
-  const mensaje = `${qr.nombre.toLocaleUpperCase("es-ES")} ${qr.identificador} ${qr.tipo_de_aviso}`;
-  context.textContent = `${qr.local} · ${mensaje}`;
-  document.title = `${mensaje} | Aviso QR`;
+  const message = `${normalizeWords(qr.nombre).toLocaleUpperCase("es-ES")} ${qr.identificador} ${qr.tipo_de_aviso}`;
+  context.textContent = `${qr.local} · ${message}`;
+  document.title = `${message} | Aviso QR`;
   void sendAlert(qr);
 }
