@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
@@ -9,12 +9,103 @@ const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(ROOT, "public");
 const PORT = Number(process.env.PORT || 3000);
 const MQTT_URL = process.env.MQTT_URL;
+const LOCAL_CODE_SECRET = process.env.LOCAL_CODE_SECRET || "";
+if (LOCAL_CODE_SECRET && Buffer.byteLength(LOCAL_CODE_SECRET, "utf8") < 32) {
+  throw new Error("LOCAL_CODE_SECRET must contain at least 32 bytes");
+}
+const CODE_PERIOD_SECONDS = Number(process.env.LOCAL_CODE_PERIOD_SECONDS || 30);
+const CODE_LENGTH = 6;
+if (!Number.isInteger(CODE_PERIOD_SECONDS) || CODE_PERIOD_SECONDS < 10 || CODE_PERIOD_SECONDS > 3600) {
+  throw new Error("LOCAL_CODE_PERIOD_SECONDS must be between 10 and 3600");
+}
+const VALID_LOCALS = [...new Set((process.env.VALID_LOCALS || "")
+  .split(",").map((value) => value.trim()).filter(Boolean))];
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 30;
+const INVALID_CODE_LIMIT = 10;
 const requestsByIp = new Map();
+const invalidCodesByClient = new Map();
 
 let mqttConnected = false;
 let mqttClient;
+let codePublishTimer;
+
+function normalizeWords(value) {
+  return value.replaceAll("_", " ").trim().replace(/\s+/g, " ");
+}
+
+function parseAlertTypes(value) {
+  const defaults = "Predeterminado,Pedir_Cuenta,Cobrar_en_VISA";
+  return [...new Set((value || defaults).split(",").map(normalizeWords).filter(validType))];
+}
+
+const ALERT_TYPES = parseAlertTypes(process.env.ALERT_TYPES);
+if (ALERT_TYPES.length === 0) throw new Error("ALERT_TYPES must contain at least one valid alert type");
+
+function validLocalName(value) {
+  return /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/i.test(value);
+}
+
+function isKnownLocal(value) {
+  return typeof value === "string" && VALID_LOCALS.includes(value);
+}
+
+function codeFor(local, timeSlot) {
+  const digest = createHmac("sha256", LOCAL_CODE_SECRET)
+    .update(`${local}:${timeSlot}`)
+    .digest();
+  return String(digest.readUInt32BE(0) % (10 ** CODE_LENGTH)).padStart(CODE_LENGTH, "0");
+}
+
+function isValidLocalCode(local, submittedCode) {
+  if (!LOCAL_CODE_SECRET || !/^\d{6}$/.test(submittedCode)) return false;
+  const currentSlot = Math.floor(Date.now() / (CODE_PERIOD_SECONDS * 1000));
+  const submitted = Buffer.from(submittedCode);
+  return [currentSlot, currentSlot - 1].some((slot) => {
+    const expected = Buffer.from(codeFor(local, slot));
+    return timingSafeEqual(submitted, expected);
+  });
+}
+
+function tooManyInvalidCodes(ip, local) {
+  const key = `${ip}:${local}`;
+  const now = Date.now();
+  const recent = (invalidCodesByClient.get(key) || []).filter((time) => now - time < RATE_LIMIT_WINDOW_MS);
+  invalidCodesByClient.set(key, recent);
+  return recent.length >= INVALID_CODE_LIMIT;
+}
+
+function recordInvalidCode(ip, local) {
+  const key = `${ip}:${local}`;
+  const now = Date.now();
+  const recent = (invalidCodesByClient.get(key) || []).filter((time) => now - time < RATE_LIMIT_WINDOW_MS);
+  recent.push(now);
+  invalidCodesByClient.set(key, recent);
+}
+
+function publishLocalCode(local) {
+  if (!mqttClient || !mqttConnected || !LOCAL_CODE_SECRET) return;
+  const timeSlot = Math.floor(Date.now() / (CODE_PERIOD_SECONDS * 1000));
+  const topic = `/${local}/codigo`;
+  mqttClient.publish(topic, codeFor(local, timeSlot), { qos: 1, retain: true }, (error) => {
+    if (error) console.error(`Could not publish local code for ${local}:`, error.message);
+  });
+}
+
+function publishLocalCodes() {
+  for (const local of VALID_LOCALS) publishLocalCode(local);
+}
+
+function scheduleCodePublishing() {
+  clearTimeout(codePublishTimer);
+  const periodMs = CODE_PERIOD_SECONDS * 1000;
+  const untilNextSlot = periodMs - (Date.now() % periodMs) + 25;
+  codePublishTimer = setTimeout(() => {
+    if (mqttConnected) publishLocalCodes();
+    scheduleCodePublishing();
+  }, untilNextSlot);
+  codePublishTimer.unref();
+}
 
 if (MQTT_URL) {
   mqttClient = mqtt.connect(MQTT_URL, {
@@ -27,6 +118,8 @@ if (MQTT_URL) {
   mqttClient.on("connect", () => {
     mqttConnected = true;
     console.log("Connected to MQTT broker");
+    if (LOCAL_CODE_SECRET) publishLocalCodes();
+    scheduleCodePublishing();
   });
   mqttClient.on("close", () => {
     mqttConnected = false;
@@ -90,10 +183,6 @@ function readJson(request, maxBytes = 2048) {
     });
     request.on("error", reject);
   });
-}
-
-function normalizeWords(value) {
-  return value.replaceAll("_", " ").trim().replace(/\s+/g, " ");
 }
 
 function validName(value) {
@@ -186,6 +275,18 @@ const server = createServer(async (request, response) => {
     return json(response, 200, { ok: true, mqttConnected });
   }
 
+  if (request.method === "GET" && url.pathname === "/api/config") {
+    const local = url.searchParams.get("local") || "";
+    if (!isKnownLocal(local)) return json(response, 404, { ok: false, error: "Unknown local" });
+    return json(response, 200, {
+      ok: true,
+      local,
+      alertTypes: ALERT_TYPES,
+      codeLength: CODE_LENGTH,
+      codePeriodSeconds: CODE_PERIOD_SECONDS,
+    });
+  }
+
   if (request.method === "POST" && url.pathname === "/api/alert") {
     const ip = request.socket.remoteAddress || "unknown";
     if (isRateLimited(ip)) {
@@ -201,19 +302,37 @@ const server = createServer(async (request, response) => {
         error: error.message,
       });
     }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return json(response, 400, { ok: false, error: "Invalid QR data" });
+    }
 
     const local = typeof payload.local === "string" ? payload.local : "";
     const nombre = payload.nombre;
     const identificador = payload.identificador;
     const rawType = payload.tipo_de_aviso;
-    const tipoDeAviso = rawType == null || rawType === "" ? "Predeterminado" : rawType;
+    const tipoDeAviso = typeof rawType !== "string" || rawType === ""
+      ? "Predeterminado"
+      : normalizeWords(rawType);
+    const codigo = typeof payload.codigo === "string" ? payload.codigo.trim() : "";
 
-    if (!/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/i.test(local)
+    if (!validLocalName(local)
+      || !isKnownLocal(local)
       || !validName(nombre)
       || typeof identificador !== "string"
       || !/^[\p{L}\p{N}_-]{1,32}$/u.test(identificador)
-      || !validType(tipoDeAviso)) {
+      || !ALERT_TYPES.includes(tipoDeAviso)
+      || !/^\d{6}$/.test(codigo)) {
       return json(response, 400, { ok: false, error: "Invalid QR data" });
+    }
+    if (!LOCAL_CODE_SECRET) {
+      return json(response, 503, { ok: false, error: "Local code verification is not configured" });
+    }
+    if (tooManyInvalidCodes(ip, local)) {
+      return json(response, 429, { ok: false, error: "Too many invalid codes" });
+    }
+    if (!isValidLocalCode(local, codigo)) {
+      recordInvalidCode(ip, local);
+      return json(response, 403, { ok: false, error: "Invalid or expired local code" });
     }
     if (!mqttClient || !mqttConnected) {
       return json(response, 503, { ok: false, error: "MQTT broker is not connected" });
@@ -245,5 +364,8 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(PORT, () => {
+  if (VALID_LOCALS.length === 0) console.error("No valid locals configured; set VALID_LOCALS in .env");
+  if (!LOCAL_CODE_SECRET) console.error("Local code verification is disabled; set LOCAL_CODE_SECRET in .env");
   console.log(`Web server listening on port ${PORT}`);
 });
+
