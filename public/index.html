@@ -18,8 +18,17 @@
         <span class="status-dot" aria-hidden="true"></span>
         <span id="status-text">Preparando el aviso</span>
       </div>
-      <p id="help" class="help">Puedes dejar esta página abierta.</p>
+      <form id="alert-form" class="alert-form" hidden>
+        <label for="alert-type">¿Qué necesitas?</label>
+        <select id="alert-type" name="tipo_de_aviso" required></select>
+        <label for="local-code">Código del local</label>
+        <input id="local-code" name="codigo" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required>
+        <p class="form-note">Introduce el código que aparece en el local.</p>
+        <button id="send-button" type="submit">Enviar aviso</button>
+      </form>
+      <p id="help" class="help">Introduce el código que aparece en el local.</p>
     </main>
     <footer>Servicio de avisos por QR</footer>
   </body>
 </html>
+
