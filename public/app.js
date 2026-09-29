@@ -75,8 +75,8 @@ async function sendAlert(qr) {
     }
 
     showStatus("success", "Aviso enviado", "El equipo ha recibido el aviso.");
-    localCode.value = "";
-    sendButton.textContent = "Aviso enviado";
+    sendButton.disabled = false;
+    sendButton.textContent = "Enviar otro aviso";
   } catch {
     showStatus("error", "No se pudo enviar el aviso", "Comprueba tu conexión o avisa al personal directamente.");
     sendButton.disabled = false;
