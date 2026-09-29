@@ -40,7 +40,7 @@ function parseQrPath(pathname) {
   if (!validType(tipo_de_aviso)) return null;
 
   return {
-    local: local.toLowerCase(),
+    local,
     nombre,
     identificador,
     tipo_de_aviso,
