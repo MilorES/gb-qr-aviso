@@ -35,7 +35,7 @@ El navegador interpreta los tres segmentos obligatorios y el cuarto opcional, mu
 ## Verificación del local por código MQTT
 
 - `VALID_LOCALS` contiene los nombres exactos permitidos, separados por comas, por ejemplo `Breston,OtroLocal`. Se conservan mayúsculas y minúsculas porque los temas MQTT distinguen el caso.
-- `ALERT_TYPES` contiene las opciones comunes a los locales, separadas por comas. Se convierten guiones bajos en espacios, por ejemplo `Pedir_Cuenta` se muestra como `Pedir Cuenta`.
+- `ALERT_TYPES` contiene las opciones comunes a los locales, separadas por comas. Admite paréntesis; los guiones bajos se muestran como espacios, por ejemplo `Pedir_Cuenta` se muestra como `Pedir Cuenta`.
 - `LOCAL_CODE_SECRET` es un secreto aleatorio que debe mantenerse privado.
 - `LOCAL_CODE_PERIOD_SECONDS` controla la rotación; el valor inicial es 30 segundos.
 
