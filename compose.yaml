@@ -1,0 +1,9 @@
+services:
+  gb-qr-aviso:
+    build: .
+    container_name: gb-qr-aviso
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./.env:/app/.env:ro
