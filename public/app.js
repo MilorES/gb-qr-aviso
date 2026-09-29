@@ -82,7 +82,7 @@ if (!qr) {
   context.textContent = "El enlace del código QR no es válido.";
   showStatus("error", "No se pudo identificar el aviso", "Formato: /local/nombre/identificador/tipo_de_aviso (el último dato es opcional).");
 } else {
-  const message = `${normalizeWords(qr.nombre).toLocaleUpperCase("es-ES")} ${qr.identificador} ${qr.tipo_de_aviso}`;
+  const message = `${normalizeWords(qr.nombre)} ${qr.identificador} ${qr.tipo_de_aviso}`;
   context.textContent = `${qr.local} · ${message}`;
   document.title = `${message} | Aviso QR`;
   void sendAlert(qr);
