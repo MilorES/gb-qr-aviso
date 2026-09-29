@@ -1,50 +1,61 @@
 # gb-qr-aviso
 
-Web generalista que envía un aviso MQTT al abrir un código QR. El enlace tiene cuatro partes:
+Web generalista que envía un aviso MQTT al abrir un código QR. El formato de la URL es:
 
 `https://tu-dominio/local/nombre/identificador/tipo_de_aviso`
 
-Ejemplo:
+El último segmento es opcional. Ejemplos:
 
-`https://tu-dominio/breston/mesa/01/Cobrar_en_VISA`
+- `https://tu-dominio/breston/mesa/01/Cobrar_en_VISA`
+- `https://tu-dominio/breston/mesa/01`
 
-- `local`: destinatario de los avisos (por ejemplo, `breston`).
-- `nombre`: origen del aviso (por ejemplo, `mesa`, `barra` o `coche`).
-- `identificador`: número o nombre que distingue el origen (por ejemplo, `01`).
-- `tipo_de_aviso`: detalle del aviso. Los guiones bajos se muestran como espacios.
+Significado de los segmentos:
 
-El ejemplo muestra `MESA 01 Cobrar en VISA` en la página y lo publica en MQTT como `mensaje`.
+- `local`: quién recibe el aviso, por ejemplo `breston`.
+- `nombre`: origen del aviso, por ejemplo `mesa`, `barra` o `coche`.
+- `identificador`: distingue el origen, por ejemplo `01`, `B` o `ABC`.
+- `tipo_de_aviso`: texto del aviso. Los guiones bajos se convierten en espacios; si se omite, el texto es `Predeterminado`.
 
-## Cómo funciona
+## Mensaje MQTT
 
-El navegador valida el enlace y envía sus datos al servidor de esta aplicación. El servidor construye el evento y lo publica en el tema `gb/avisos/<local>`; para el ejemplo, `gb/avisos/breston`. Así se pueden separar los avisos de cada local mediante el tema MQTT.
+Se publica texto plano (no JSON):
 
-El servidor conserva las credenciales del broker. No se incluyen en el navegador ni en este repositorio público.
+- Tema: `/local/nombre/identificador`
+- Payload: `tipo_de_aviso` con guiones bajos convertidos en espacios; si falta, `Predeterminado`.
 
-## Desarrollo
+Para el ejemplo se publica:
 
-Requiere Node.js 20.6 o superior y acceso de red desde el servidor al broker MQTT.
+- Tema: `/breston/mesa/01`
+- Payload: `Cobrar en VISA`
 
-1. Copia `.env.example` como `.env` y completa la configuración del broker.
-2. Ejecuta `npm install`.
-3. Ejecuta `npm start`.
-4. Abre `http://localhost:3000/breston/mesa/01/Cobrar_en_VISA`.
+El payload predeterminado para `/breston/mesa/01` sería `Predeterminado`. La web muestra el aviso completo como `MESA 01 Cobrar en VISA`.
 
-La web debe estar accesible desde los teléfonos y usar HTTPS en producción. El servidor Node debe poder alcanzar el broker por MQTT.
+La web envía los cuatro valores al servidor. El servidor valida la ruta y publica el texto plano en el tema indicado. Las credenciales MQTT solo están en el archivo `.env`, que se monta como solo lectura dentro del contenedor y queda excluido de Git.
 
-## Configuración
+## Puesta en marcha con Docker
 
-- `MQTT_URL`: URL accesible desde el servidor, por ejemplo `mqtts://broker.example:8883`. La dirección del broker real va en el `.env` local o en la configuración privada del servidor, no en este repositorio.
-- `MQTT_USERNAME` y `MQTT_PASSWORD`: credenciales opcionales; solo en `.env` local o en los secretos del servidor.
-- `MQTT_TOPIC`: prefijo de tema; por defecto `gb/avisos`. Se añade el valor de `local`.
-- `PORT`: puerto HTTP de la web; por defecto `3000`.
+Requisitos: Docker Engine y Docker Compose.
 
-El payload es un JSON con `event`, `local`, `nombre`, `identificador`, `tipo_de_aviso`, `mensaje`, `timestamp` e `id`. El mensaje no se conserva (`retain: false`) y usa QoS 1.
+1. Copia `.env.example` como `.env`.
+2. Edita `.env` con la dirección del broker y sus credenciales.
+3. En la carpeta del proyecto ejecuta `docker compose up -d --build`.
+4. Consulta el estado con `docker compose logs -f`.
+5. Para detenerlo, ejecuta `docker compose down`.
 
-### Cifrado y seguridad
+La web queda disponible localmente en el puerto 3000. Compose la enlaza a `127.0.0.1` para que un proxy HTTPS del mismo servidor pueda publicarla con el dominio. El proxy debe dirigir rutas como `/breston/mesa/01/Cobrar_en_VISA` al contenedor y mantener HTTPS para los móviles.
 
-El puerto MQTT 1883 no cifra la conexión. Evita enviar credenciales por ese canal desde Internet; para producción, habilita TLS en el broker y conecta con `mqtts://` por un listener seguro. El repositorio es público, así que nunca subas el archivo `.env` ni credenciales reales. Un broker público compartido sirve para pruebas, no para avisos reales.
+## Configuración del broker
+
+- `MQTT_URL`: URL accesible desde el contenedor, como `mqtt://broker-host:1883`.
+- `MQTT_USERNAME` y `MQTT_PASSWORD`: credenciales opcionales del broker.
+- `PORT`: puerto interno de la web; por defecto `3000`.
+
+El proceso Node debe poder alcanzar el broker desde la red donde se ejecuta Docker. La dirección privada o pública real del broker va en el `.env` del servidor, nunca en el repositorio público.
+
+### Cifrado
+
+El puerto 1883 con `mqtt://` no cifra la conexión. Si se usan credenciales por Internet, podrían viajar sin cifrar. Para producción, habilita TLS en el broker y configura una dirección `mqtts://` segura. Un broker público compartido sirve para pruebas, no para avisos reales.
 
 ## Estado
 
-Primera versión en desarrollo. Falta configurar y verificar el acceso desde el servidor real al broker y desplegar la web con HTTPS.
+Primera versión en desarrollo. Falta verificar la conexión desde el servidor Docker al broker y desplegar el dominio con HTTPS.
