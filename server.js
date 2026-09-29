@@ -202,13 +202,13 @@ const server = createServer(async (request, response) => {
       });
     }
 
-    const local = typeof payload.local === "string" ? payload.local.toLowerCase() : "";
+    const local = typeof payload.local === "string" ? payload.local : "";
     const nombre = payload.nombre;
     const identificador = payload.identificador;
     const rawType = payload.tipo_de_aviso;
     const tipoDeAviso = rawType == null || rawType === "" ? "Predeterminado" : rawType;
 
-    if (!/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/.test(local)
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/i.test(local)
       || !validName(nombre)
       || typeof identificador !== "string"
       || !/^[\p{L}\p{N}_-]{1,32}$/u.test(identificador)
@@ -221,7 +221,7 @@ const server = createServer(async (request, response) => {
 
     const messageType = normalizeWords(tipoDeAviso);
     const message = `${normalizeWords(nombre).toLocaleUpperCase("es-ES")} ${identificador} ${messageType}`;
-    const topic = `/${local}/${nombre.toLowerCase()}/${identificador}`;
+    const topic = `/${local}/${nombre}/${identificador}`;
 
     try {
       await publishAlert(topic, message);
