@@ -1,4 +1,4 @@
-# gb-qr-aviso-server
+# GB QR Avisos · servidor
 
 Servidor web para las solicitudes que llegan desde códigos QR. Comprueba el código rotatorio del local y publica el aviso en MQTT.
 
