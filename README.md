@@ -77,8 +77,6 @@ El broker debe admitir MQTT 5 y permitir al servidor publicar en `<Local>/codigo
 
 `mqtt://` en el puerto 1883 no cifra el tráfico. Para una conexión por Internet con credenciales, configura TLS en el broker y usa `mqtts://`.
 
-## Estado
+## Clientes
 
-El servidor se ha ejecutado localmente en Docker y se comprobó en los registros que conectaba con MQTT. Esta actualización añade la interfaz en cuatro idiomas, las dos acciones rápidas y las propiedades MQTT 5 `language` y `client_ip`; falta reconstruir el contenedor y comprobarlo con el broker y los clientes.
-
-El cliente de Windows se desarrolla en el repositorio separado `gb-qr-aviso-clients`. La aplicación Android queda para una fase posterior.
+Los clientes de escritorio para Windows y Linux se mantienen en el repositorio separado [`gb-qr-aviso-clients`](https://github.com/MilorES/gb-qr-aviso-clients). Se conectan al broker con MQTT 5 y reciben los avisos de `<Local>/+/+`, incluido el idioma enviado como propiedad de usuario. La aplicación Android todavía no forma parte de estos repositorios.
