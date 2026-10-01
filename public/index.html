@@ -1,34 +1,54 @@
 <!doctype html>
-<html lang="es">
+<html lang="ca">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#12382f">
-    <title>Aviso QR</title>
+    <title>Avís QR</title>
     <link rel="stylesheet" href="/styles.css">
     <script src="/app.js" defer></script>
   </head>
   <body>
     <main class="card" aria-labelledby="title">
-      <div class="brand-mark" aria-hidden="true">GB</div>
-      <p class="eyebrow">GRUPO BRESTON</p>
-      <h1 id="title">Aviso QR</h1>
-      <p id="context" class="context">Comprobando el enlace…</p>
-      <div id="status" class="status" role="status" aria-live="polite">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span id="status-text">Preparando el aviso</span>
+      <div class="language-control">
+        <label for="language-select" data-i18n="languageLabel">Idioma</label>
+        <select id="language-select" aria-label="Idioma">
+          <option value="ca">Català</option>
+          <option value="es">Castellano</option>
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+        </select>
       </div>
+      <div class="brand-mark" aria-hidden="true">GB</div>
+      <p class="eyebrow" data-i18n="brand">GRUP BRESTON</p>
+      <h1 id="title" data-i18n="title">Avís QR</h1>
+      <p id="context" class="context" data-i18n="checkingLink">Comprovant l’enllaç…</p>
+      <div id="status" class="status" role="status" aria-live="polite" hidden>
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="status-text"></span>
+      </div>
+      <p id="help" class="help" hidden></p>
       <form id="alert-form" class="alert-form" hidden>
-        <label for="alert-type">¿Qué necesitas?</label>
-        <select id="alert-type" name="tipo_de_aviso" required></select>
-        <label for="local-code">Código del local</label>
+        <div class="actions">
+          <button class="action-button action-waiter" type="button" data-action="callWaiter">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+              <path d="M10 21h4"></path>
+            </svg>
+            <span data-i18n="callWaiter">Crida el cambrer</span>
+          </button>
+          <button class="action-button action-bill" type="button" data-action="requestBill">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 3v18l3.5-2 3.5 2 3.5-2 3.5 2V3l-3.5 2L12 3 8.5 5 5 3Z"></path>
+              <path d="M9 10h6M9 14h6"></path>
+            </svg>
+            <span data-i18n="requestBill">Demana el compte</span>
+          </button>
+        </div>
+        <label for="local-code" data-i18n="localCode">Codi del local</label>
         <input id="local-code" name="codigo" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required>
-        <p class="form-note">Introduce el código que aparece en el local.</p>
-        <button id="send-button" type="submit">Enviar aviso</button>
+        <p class="form-note" data-i18n="codeHelp">Introdueix el codi que es mostra al local.</p>
       </form>
-      <p id="help" class="help">Introduce el código que aparece en el local.</p>
     </main>
-    <footer>Servicio de avisos por QR</footer>
   </body>
 </html>
-

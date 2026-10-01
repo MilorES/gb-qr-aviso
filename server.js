@@ -2,6 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
+import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
 import mqtt from "mqtt";
 
@@ -9,6 +10,7 @@ const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(ROOT, "public");
 const PORT = Number(process.env.PORT || 3000);
 const MQTT_URL = process.env.MQTT_URL;
+const SUPPORTED_LANGUAGES = new Set(["ca", "es", "fr", "en"]);
 const LOCAL_CODE_SECRET = process.env.LOCAL_CODE_SECRET || "";
 if (LOCAL_CODE_SECRET && Buffer.byteLength(LOCAL_CODE_SECRET, "utf8") < 32) {
   throw new Error("LOCAL_CODE_SECRET must contain at least 32 bytes");
@@ -20,6 +22,10 @@ if (!Number.isInteger(CODE_PERIOD_SECONDS) || CODE_PERIOD_SECONDS < 10 || CODE_P
 }
 const VALID_LOCALS = [...new Set((process.env.VALID_LOCALS || "")
   .split(",").map((value) => value.trim()).filter(Boolean))];
+const LEGACY_TOPIC_LOCALS = [...new Set((process.env.LEGACY_TOPIC_LOCALS || "")
+  .split(",").map((value) => value.trim()).filter(Boolean))];
+const TRUSTED_PROXY_IPS = new Set((process.env.TRUSTED_PROXY_IPS || "")
+  .split(",").map(normalizeIp).filter((value) => value && isIP(value)));
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 30;
 const INVALID_CODE_LIMIT = 10;
@@ -34,6 +40,28 @@ function normalizeWords(value) {
   return value.replaceAll("_", " ").trim().replace(/\s+/g, " ");
 }
 
+function normalizeIp(value) {
+  const ip = typeof value === "string" ? value.trim() : "";
+  return ip.startsWith("::ffff:") ? ip.slice(7) : ip;
+}
+
+function getClientIp(request) {
+  let address = normalizeIp(request.socket.remoteAddress) || "unknown";
+  if (!TRUSTED_PROXY_IPS.has(address)) return address;
+
+  const forwardedFor = request.headers["x-forwarded-for"];
+  if (typeof forwardedFor !== "string") return address;
+  const chain = forwardedFor.split(",").map(normalizeIp);
+
+  for (let index = chain.length - 1; index >= 0; index -= 1) {
+    if (!TRUSTED_PROXY_IPS.has(address)) break;
+    const forwardedAddress = chain[index];
+    if (!isIP(forwardedAddress)) break;
+    address = forwardedAddress;
+  }
+  return address;
+}
+
 function parseAlertTypes(value) {
   const defaults = "Predeterminado,Pedir_Cuenta,Cobrar_en_VISA";
   return [...new Set((value || defaults).split(",").map(normalizeWords).filter(validType))];
@@ -41,6 +69,14 @@ function parseAlertTypes(value) {
 
 const ALERT_TYPES = parseAlertTypes(process.env.ALERT_TYPES);
 if (ALERT_TYPES.length === 0) throw new Error("ALERT_TYPES must contain at least one valid alert type");
+const ACTION_MESSAGE_TYPES = {
+  callWaiter: normalizeWords(process.env.CALL_WAITER_ALERT_TYPE || "Pedir"),
+  requestBill: normalizeWords(process.env.REQUEST_BILL_ALERT_TYPE || "Tiquet"),
+};
+for (const [action, messageType] of Object.entries(ACTION_MESSAGE_TYPES)) {
+  if (!validType(messageType)) throw new Error(`${action} alert type is invalid`);
+}
+const VALID_ALERT_TYPES = new Set([...ALERT_TYPES, ...Object.values(ACTION_MESSAGE_TYPES)]);
 
 function validLocalName(value) {
   return /^[a-z0-9](?:[a-z0-9_-]{0,48}[a-z0-9])?$/i.test(value);
@@ -86,9 +122,16 @@ function recordInvalidCode(ip, local) {
 function publishLocalCode(local) {
   if (!mqttClient || !mqttConnected || !LOCAL_CODE_SECRET) return;
   const timeSlot = Math.floor(Date.now() / (CODE_PERIOD_SECONDS * 1000));
-  const topic = `/${local}/codigo`;
+  const topic = `${local}/codigo`;
   mqttClient.publish(topic, codeFor(local, timeSlot), { qos: 1, retain: true }, (error) => {
     if (error) console.error(`Could not publish local code for ${local}:`, error.message);
+  });
+}
+
+function clearLegacyLocalCode(local) {
+  if (!mqttClient || !mqttConnected) return;
+  mqttClient.publish(`/${local}/codigo`, "", { qos: 1, retain: true }, (error) => {
+    if (error) console.error(`Could not clear legacy local code for ${local}:`, error.message);
   });
 }
 
@@ -109,6 +152,7 @@ function scheduleCodePublishing() {
 
 if (MQTT_URL) {
   mqttClient = mqtt.connect(MQTT_URL, {
+    protocolVersion: 5,
     username: process.env.MQTT_USERNAME || undefined,
     password: process.env.MQTT_PASSWORD || undefined,
     clientId: `gbqr_${Math.random().toString(16).slice(2, 12)}`,
@@ -118,6 +162,7 @@ if (MQTT_URL) {
   mqttClient.on("connect", () => {
     mqttConnected = true;
     console.log("Connected to MQTT broker");
+    for (const local of new Set([...VALID_LOCALS, ...LEGACY_TOPIC_LOCALS])) clearLegacyLocalCode(local);
     if (LOCAL_CODE_SECRET) publishLocalCodes();
     scheduleCodePublishing();
   });
@@ -200,12 +245,16 @@ function validType(value) {
     && normalizeWords(value).length > 0;
 }
 
-function publishAlert(topic, message) {
+function publishAlert(topic, message, language, clientIp) {
   return new Promise((resolvePublish, reject) => {
     mqttClient.publish(
       topic,
       message,
-      { qos: 1, retain: false },
+      {
+        qos: 1,
+        retain: false,
+        properties: { userProperties: { language, client_ip: clientIp } },
+      },
       (error) => (error ? reject(error) : resolvePublish()),
     );
   });
@@ -282,13 +331,14 @@ const server = createServer(async (request, response) => {
       ok: true,
       local,
       alertTypes: ALERT_TYPES,
+      actions: ACTION_MESSAGE_TYPES,
       codeLength: CODE_LENGTH,
       codePeriodSeconds: CODE_PERIOD_SECONDS,
     });
   }
 
   if (request.method === "POST" && url.pathname === "/api/alert") {
-    const ip = request.socket.remoteAddress || "unknown";
+    const ip = getClientIp(request);
     if (isRateLimited(ip)) {
       return json(response, 429, { ok: false, error: "Too many requests" });
     }
@@ -310,6 +360,7 @@ const server = createServer(async (request, response) => {
     const nombre = payload.nombre;
     const identificador = payload.identificador;
     const rawType = payload.tipo_de_aviso;
+    const language = typeof payload.language === "string" ? payload.language : "ca";
     const tipoDeAviso = typeof rawType !== "string" || rawType === ""
       ? "Predeterminado"
       : normalizeWords(rawType);
@@ -320,7 +371,8 @@ const server = createServer(async (request, response) => {
       || !validName(nombre)
       || typeof identificador !== "string"
       || !/^[\p{L}\p{N}_-]{1,32}$/u.test(identificador)
-      || !ALERT_TYPES.includes(tipoDeAviso)
+      || !VALID_ALERT_TYPES.has(tipoDeAviso)
+      || !SUPPORTED_LANGUAGES.has(language)
       || !/^\d{6}$/.test(codigo)) {
       return json(response, 400, { ok: false, error: "Invalid QR data" });
     }
@@ -340,10 +392,10 @@ const server = createServer(async (request, response) => {
 
     const messageType = normalizeWords(tipoDeAviso);
     const message = messageType;
-    const topic = `/${local}/${nombre}/${identificador}`;
+    const topic = `${local}/${nombre}/${identificador}`;
 
     try {
-      await publishAlert(topic, message);
+      await publishAlert(topic, message, language, ip);
       return json(response, 200, { ok: true, topic, message, id: randomUUID() });
     } catch (error) {
       console.error("MQTT publish failed:", error.message);
@@ -368,4 +420,3 @@ server.listen(PORT, () => {
   if (!LOCAL_CODE_SECRET) console.error("Local code verification is disabled; set LOCAL_CODE_SECRET in .env");
   console.log(`Web server listening on port ${PORT}`);
 });
-
